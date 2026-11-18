@@ -16,11 +16,8 @@ GAMES, GOALS, YELLOW = 1, 5, 7
 
 
 def find_player(name):
-   r = requests.get("https://api.scraperapi.com/",
-                 params={"api_key": os.environ["SCRAPER_KEY"],
-                         "url": BASE + path, "render": "true"},
-                 timeout=90)
-
+    r = requests.get(f"{BASE}/schnellsuche/ergebnis/schnellsuche",
+                     params={"query": name}, headers=HEADERS, timeout=15)
     a = BeautifulSoup(r.text, "html.parser").select_one('a[href*="/profil/spieler/"]')
     if not a:
         return None
@@ -33,7 +30,10 @@ def num(x):
 
 
 def get_stats(path, stat_idx):
-    r = requests.get(BASE + path, headers=HEADERS, timeout=15)
+    r = requests.get("https://api.scraperapi.com/",
+                     params={"api_key": os.environ["SCRAPER_KEY"],
+                             "url": BASE + path, "render": "true"},
+                     timeout=90)
     soup = BeautifulSoup(r.text, "html.parser")
     rows, seen, samples = [], set(), []
     all_tr = soup.find_all("tr")
@@ -58,9 +58,8 @@ def get_stats(path, stat_idx):
                      num(tds[i + stat_idx].get_text()),
                      num(tds[i + GAMES].get_text())))
     tables = soup.find_all("table")
-    classes = [" ".join(t.get("class", []))[:20] for t in tables[:4]]
     debug = (f"status={r.status_code}, size={len(r.text)}, tables={len(tables)}, "
-             f"tr={len(all_tr)}, rows={len(rows)}, classes={classes}, "
+             f"tr={len(all_tr)}, rows={len(rows)}, "
              f"leicester={'Leicester' in r.text}, sample={samples}")
     return rows, debug
 
@@ -95,9 +94,14 @@ async def on_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     name, path = ctx.user_data["player"]
     kind = q.data
-    all_rows, debug = get_stats(path, GOALS if kind == "goals" else YELLOW)
-    rows = top5_with_ties(all_rows)
     label = "goals" if kind == "goals" else "yellow cards"
+    await q.edit_message_text(f"Looking up {label} for {name}... (can take up to 30s)")
+    try:
+        all_rows, debug = get_stats(path, GOALS if kind == "goals" else YELLOW)
+    except Exception as e:
+        await q.edit_message_text(f"Error: {e}"[:4000])
+        return
+    rows = top5_with_ties(all_rows)
     if not rows:
         await q.edit_message_text(f"No {label} found for {name}.\n\nDEBUG: {debug}"[:4000])
         return
