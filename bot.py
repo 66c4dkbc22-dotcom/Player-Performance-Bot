@@ -67,3 +67,50 @@ def top5_with_ties(rows, col):
         return rows
     cutoff = rows[4][col]
     return [r for r in rows if r[col] >= cutoff]
+
+
+
+def section(emoji, title, rows, col):
+    if not rows:
+        return f"{emoji} {title}\nNone found."
+    lines = [f"{emoji} {title}"]
+    for team, games, goals, yellow in rows:
+        count = rows_value = r_val(team, games, goals, yellow, col)
+        rate = count / games if games else 0
+        if col == 2:
+            lines.append(f"{team}: {count} in {games} games ({rate:.2f} per game)")
+        else:
+            lines.append(f"{team}: {count} in {games} games ({rate:.0%})")
+    return "\n".join(lines)
+
+
+def r_val(team, games, goals, yellow, col):
+    return goals if col == 2 else yellow
+
+
+async def on_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    found = find_player(update.message.text)
+    if not found:
+        await update.message.reply_text("Couldn't find that player.")
+        return
+    name, path = found
+    msg = await update.message.reply_text(f"Looking up {name}...")
+    try:
+        rows, debug = get_stats(path)
+    except Exception as e:
+        await msg.edit_text(f"Error: {e}"[:4000])
+        return
+    if not rows:
+        await msg.edit_text(f"No data found for {name}.\n\nDEBUG: {debug}"[:4000])
+        return
+    goals = section("⚽", f"{name} - most goals against:",
+                    top5_with_ties(rows, 2), 2)
+    cards = section("🟨", f"{name} - most yellow cards against:",
+                    top5_with_ties(rows, 3), 3)
+    await msg.edit_text(f"{goals}\n\n{cards}"[:4000])
+
+
+app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_name))
+app.run_polling()
+
