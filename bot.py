@@ -16,8 +16,11 @@ GAMES, GOALS, YELLOW = 1, 5, 7
 
 
 def find_player(name):
-    r = requests.get(f"{BASE}/schnellsuche/ergebnis/schnellsuche",
-                     params={"query": name}, headers=HEADERS, timeout=15)
+   r = requests.get("https://api.scraperapi.com/",
+                 params={"api_key": os.environ["SCRAPER_KEY"],
+                         "url": BASE + path, "render": "true"},
+                 timeout=90)
+
     a = BeautifulSoup(r.text, "html.parser").select_one('a[href*="/profil/spieler/"]')
     if not a:
         return None
