@@ -32,23 +32,33 @@ def num(x):
 def get_stats(path, stat_idx):
     r = requests.get(BASE + path, headers=HEADERS, timeout=15)
     soup = BeautifulSoup(r.text, "html.parser")
-    rows = []
-    for tr in soup.select("table.items tr"):
+    rows, seen, samples = [], set(), []
+    all_tr = soup.find_all("tr")
+    for tr in all_tr:
         tds = tr.find_all("td")
-        links = [a for a in tr.select("a") if a.get_text(strip=True)]
-        if not links or len(tds) < 8:
+        if len(tds) < 7:
+            continue
+        links = [a for a in tr.find_all("a") if a.get_text(strip=True)]
+        if not links:
             continue
         link = links[0]
         i = next((n for n, td in enumerate(tds) if link in td.find_all("a")), None)
         if i is None or i + stat_idx >= len(tds):
             continue
-        rows.append((link.get_text(strip=True),
+        team = link.get_text(strip=True)
+        if len(samples) < 2:
+            samples.append([td.get_text(strip=True)[:12] for td in tds][:12])
+        if team in seen:
+            continue
+        seen.add(team)
+        rows.append((team,
                      num(tds[i + stat_idx].get_text()),
                      num(tds[i + GAMES].get_text())))
-    title = soup.title.get_text(strip=True)[:60] if soup.title else "none"
-    debug = (f"status={r.status_code}, size={len(r.text)}, "
-             f"tables={len(soup.select('table.items'))}, rows={len(rows)}, "
-             f"title={title}, url={path}")
+    tables = soup.find_all("table")
+    classes = [" ".join(t.get("class", []))[:20] for t in tables[:4]]
+    debug = (f"status={r.status_code}, size={len(r.text)}, tables={len(tables)}, "
+             f"tr={len(all_tr)}, rows={len(rows)}, classes={classes}, "
+             f"leicester={'Leicester' in r.text}, sample={samples}")
     return rows, debug
 
 
@@ -86,7 +96,7 @@ async def on_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rows = top5_with_ties(all_rows)
     label = "goals" if kind == "goals" else "yellow cards"
     if not rows:
-        await q.edit_message_text(f"No {label} found for {name}.\n\nDEBUG: {debug}")
+        await q.edit_message_text(f"No {label} found for {name}.\n\nDEBUG: {debug}"[:4000])
         return
     lines = [f"{name} - most {label} against:"]
     for team, count, games in rows:
