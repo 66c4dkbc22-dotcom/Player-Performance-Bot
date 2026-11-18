@@ -81,3 +81,41 @@ async def on_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("🟨 Yellow cards", callback_data="yellow")]])
     await update.message.reply_text(f"{found[0]} - what do you want to check?",
                                     reply_markup=kb)
+
+
+
+async def on_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if "player" not in ctx.user_data:
+        await q.edit_message_text("Send a player name first.")
+        return
+    name, path = ctx.user_data["player"]
+    kind = q.data
+    label = "goals" if kind == "goals" else "yellow cards"
+    emoji = "⚽" if kind == "goals" else "🟨"
+    await q.edit_message_text(f"Looking up {label} for {name}... (can take up to 30s)")
+    try:
+        all_rows, debug = get_stats(path, GOALS if kind == "goals" else YELLOW)
+    except Exception as e:
+        await q.edit_message_text(f"Error: {e}"[:4000])
+        return
+    rows = top5_with_ties(all_rows)
+    if not rows:
+        await q.edit_message_text(f"No {label} found for {name}.\n\nDEBUG: {debug}"[:4000])
+        return
+    lines = [f"{emoji} {name} - most {label} against:"]
+    for team, count, games in rows:
+        rate = count / games if games else 0
+        if kind == "goals":
+            lines.append(f"{team}: {count} in {games} games ({rate:.2f} per game)")
+        else:
+            lines.append(f"{team}: {count} in {games} games ({rate:.0%})")
+    await q.edit_message_text("\n".join(lines))
+
+
+app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_name))
+app.add_handler(CallbackQueryHandler(on_choice))
+app.run_polling()
+
