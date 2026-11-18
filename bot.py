@@ -80,4 +80,4 @@ async def on_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("⚽ Goals", callback_data="goals"),
         InlineKeyboardButton("🟨 Yellow cards", callback_data="yellow")]])
     await update.message.reply_text(f"{found[0]} - what do you want to check?",
-                                
+                                    reply_markup=kb)
