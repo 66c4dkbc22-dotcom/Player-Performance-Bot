@@ -1,4 +1,4 @@
-import os, requests
+import os, re, requests
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (ApplicationBuilder, CallbackQueryHandler,
@@ -11,8 +11,8 @@ HEADERS = {
                   "Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "en-GB,en;q=0.9",
 }
-# column offsets after the opponent-name cell
-GAMES, GOALS, YELLOW = 1, 5, 7
+# positions after the opponent name: games, W, D, L, goals, assists, yellow
+GAMES, GOALS, YELLOW = 0, 4, 6
 
 
 def find_player(name):
@@ -35,32 +35,29 @@ def get_stats(path, stat_idx):
                              "url": BASE + path, "render": "true"},
                      timeout=90)
     soup = BeautifulSoup(r.text, "html.parser")
-    rows, seen, samples = [], set(), []
-    all_tr = soup.find_all("tr")
-    for tr in all_tr:
-        tds = tr.find_all("td")
-        if len(tds) < 7:
+    rows, seen = [], set()
+    club_links = soup.find_all("a", href=re.compile("/verein/"))
+    for a in club_links:
+        name = a.get_text(strip=True)
+        if not name or name in seen:
             continue
-        links = [a for a in tr.find_all("a") if a.get_text(strip=True)]
-        if not links:
-            continue
-        link = links[0]
-        i = next((n for n, td in enumerate(tds) if link in td.find_all("a")), None)
-        if i is None or i + stat_idx >= len(tds):
-            continue
-        team = link.get_text(strip=True)
-        if len(samples) < 2:
-            samples.append([td.get_text(strip=True)[:12] for td in tds][:12])
-        if team in seen:
-            continue
-        seen.add(team)
-        rows.append((team,
-                     num(tds[i + stat_idx].get_text()),
-                     num(tds[i + GAMES].get_text())))
-    tables = soup.find_all("table")
-    debug = (f"status={r.status_code}, size={len(r.text)}, tables={len(tables)}, "
-             f"tr={len(all_tr)}, rows={len(rows)}, "
-             f"leicester={'Leicester' in r.text}, sample={samples}")
+        node = a
+        for _ in range(8):
+            node = node.parent
+            if node is None:
+                break
+            strs = list(node.stripped_strings)
+            if name not in strs:
+                continue
+            tail = strs[strs.index(name) + 1: strs.index(name) + 9]
+            if len(tail) >= 7 and all(re.fullmatch(r"\d+|-", t) for t in tail[:7]):
+                seen.add(name)
+                rows.append((name, num(tail[stat_idx]), num(tail[GAMES])))
+                break
+    idx = r.text.find("Leicester")
+    snippet = r.text[max(0, idx - 150): idx + 250].replace("\n", " ") if idx >= 0 else "none"
+    debug = (f"status={r.status_code}, size={len(r.text)}, "
+             f"clublinks={len(club_links)}, rows={len(rows)}, snippet={snippet}")
     return rows, debug
 
 
