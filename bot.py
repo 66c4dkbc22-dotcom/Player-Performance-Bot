@@ -1,8 +1,8 @@
 import os, re, requests
 from bs4 import BeautifulSoup
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (ApplicationBuilder, CallbackQueryHandler,
-                          ContextTypes, MessageHandler, filters)
+from telegram import Update
+from telegram.ext import (ApplicationBuilder, ContextTypes,
+                          MessageHandler, filters)
 
 BASE = "https://www.transfermarkt.com"
 HEADERS = {
@@ -29,7 +29,7 @@ def num(x):
     return int(x) if x.isdigit() else 0
 
 
-def get_stats(path, stat_idx):
+def get_stats(path):
     r = requests.get("https://api.scraperapi.com/",
                      params={"api_key": os.environ["SCRAPER_KEY"],
                              "url": BASE + path, "render": "true"},
@@ -52,70 +52,18 @@ def get_stats(path, stat_idx):
             tail = strs[strs.index(name) + 1: strs.index(name) + 9]
             if len(tail) >= 7 and all(re.fullmatch(r"\d+|-", t) for t in tail[:7]):
                 seen.add(name)
-                rows.append((name, num(tail[stat_idx]), num(tail[GAMES])))
+                rows.append((name, num(tail[GAMES]),
+                             num(tail[GOALS]), num(tail[YELLOW])))
                 break
-    idx = r.text.find("Leicester")
-    snippet = r.text[max(0, idx - 150): idx + 250].replace("\n", " ") if idx >= 0 else "none"
     debug = (f"status={r.status_code}, size={len(r.text)}, "
-             f"clublinks={len(club_links)}, rows={len(rows)}, snippet={snippet}")
+             f"clublinks={len(club_links)}, rows={len(rows)}")
     return rows, debug
 
 
-def top5_with_ties(rows):
-    rows = [r for r in rows if r[1] > 0]
-    rows.sort(key=lambda r: (-r[1], r[2]))
+def top5_with_ties(rows, col):
+    rows = [r for r in rows if r[col] > 0]
+    rows.sort(key=lambda r: (-r[col], r[1]))
     if len(rows) <= 5:
         return rows
-    cutoff = rows[4][1]
-    return [r for r in rows if r[1] >= cutoff]
-
-
-async def on_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    found = find_player(update.message.text)
-    if not found:
-        await update.message.reply_text("Couldn't find that player.")
-        return
-    ctx.user_data["player"] = found
-    kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("⚽ Goals", callback_data="goals"),
-        InlineKeyboardButton("🟨 Yellow cards", callback_data="yellow")]])
-    await update.message.reply_text(f"{found[0]} - what do you want to check?",
-                                    reply_markup=kb)
-
-
-
-async def on_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    if "player" not in ctx.user_data:
-        await q.edit_message_text("Send a player name first.")
-        return
-    name, path = ctx.user_data["player"]
-    kind = q.data
-    label = "goals" if kind == "goals" else "yellow cards"
-    emoji = "⚽" if kind == "goals" else "🟨"
-    await q.edit_message_text(f"Looking up {label} for {name}... (can take up to 30s)")
-    try:
-        all_rows, debug = get_stats(path, GOALS if kind == "goals" else YELLOW)
-    except Exception as e:
-        await q.edit_message_text(f"Error: {e}"[:4000])
-        return
-    rows = top5_with_ties(all_rows)
-    if not rows:
-        await q.edit_message_text(f"No {label} found for {name}.\n\nDEBUG: {debug}"[:4000])
-        return
-    lines = [f"{emoji} {name} - most {label} against:"]
-    for team, count, games in rows:
-        rate = count / games if games else 0
-        if kind == "goals":
-            lines.append(f"{team}: {count} in {games} games ({rate:.2f} per game)")
-        else:
-            lines.append(f"{team}: {count} in {games} games ({rate:.0%})")
-    await q.edit_message_text("\n".join(lines))
-
-
-app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_name))
-app.add_handler(CallbackQueryHandler(on_choice))
-app.run_polling()
-
+    cutoff = rows[4][col]
+    return [r for r in rows if r[col] >= cutoff]
