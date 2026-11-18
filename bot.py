@@ -17,7 +17,7 @@ def find_player(name):
     a = BeautifulSoup(r.text, "html.parser").select_one('a[href*="/profil/spieler/"]')
     if not a:
         return None
-    return a.get_text(strip=True), a["href"].replace("/profil/spieler/", "/gegnerstatistik/spieler/")
+    return a.get_text(strip=True), a["href"].replace("/profil/spieler/", "/bilanz/spieler/")
 
 
 def num(x):
